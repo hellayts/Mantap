@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visitor Info</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; }
+        .data { background: #e8f5e9; padding: 15px; margin: 10px 0; border-radius: 5px; display: none; }
+        .ip { font-size: 24px; color: #d32f2f; font-weight: bold; }
+        .admin { color: green; font-weight: bold; }
+        .log { background: #212121; color: #00ff00; padding: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 Website Statistics</h1>
+        <p id="public">Welcome to our site! This page shows general information.</p>
+        
+        <div class="data" id="private">
+            <h2 class="admin">🔐 ADMIN ACCESS - SAHRONI</h2>
+            <p><strong>Visitor IP:</strong> <span class="ip" id="ip">Detecting...</span></p>
+            <p><strong>Location:</strong> <span id="location">Loading...</span></p>
+            <p><strong>Browser:</strong> <span id="browser"></span></p>
+            <p><strong>Time:</strong> <span id="time"></span></p>
+            <p><strong>Screen:</strong> <span id="screen"></span></p>
+            
+            <h3>Access Log:</h3>
+            <div class="log" id="log"></div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <button onclick="checkAccess()">Refresh Data</button>
+            <button onclick="saveData()">Save Log</button>
+        </div>
+    </div>
+
+    <script>
+        // SIMPLE WORKING VERSION
+        function getVisitorData() {
+            const data = {
+                time: new Date().toLocaleString(),
+                browser: navigator.userAgent,
+                platform: navigator.platform,
+                screen: screen.width + 'x' + screen.height,
+                cookies: navigator.cookieEnabled,
+                language: navigator.language,
+                online: navigator.onLine
+            };
+            return data;
+        }
+
+        function getIP() {
+            return new Promise((resolve) => {
+                // Method 1: WebRTC (browser internal)
+                const getRTCPeerIP = () => {
+                    return new Promise((rtcResolve) => {
+                        const rtc = new RTCPeerConnection({iceServers: []});
+                        rtc.createDataChannel('');
+                        rtc.createOffer()
+                            .then(offer => rtc.setLocalDescription(offer))
+                            .catch(() => {});
+                        
+                        rtc.onicecandidate = (event) => {
+                            if (event.candidate) {
+                                const candidate = event.candidate.candidate;
+                                const ipMatch = candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3})/);
+                                if (ipMatch) {
+                                    rtcResolve(ipMatch[1]);
+                                    rtc.close();
+                                }
+                            }
+                        };
+                        
+                        setTimeout(() => {
+                            rtcResolve('Not found via WebRTC');
+                            rtc.close();
+                        }, 1000);
+                    });
+                };
+
+                // Method 2: Server request to ipify
+                const getAPIip = async () => {
+                    try {
+                        const response = await fetch('https://api.ipify.org?format=json');
+                        const data = await response.json();
+                        return data.ip;
+                    } catch {
+                        return 'API failed';
+                    }
+                };
+
+                // Try both methods
+                Promise.any([getRTCPeerIP(), getAPIip()])
+                    .then(ip => resolve(ip))
+                    .catch(() => resolve('IP detection failed'));
+            });
+        }
+
+        function checkAccess() {
+            const params = new URLSearchParams(window.location.search);
+            const key = params.get('key');
+            
+            const visitorData = getVisitorData();
+            document.getElementById('browser').textContent = visitorData.browser;
+            document.getElementById('time').textContent = visitorData.time;
+            document.getElementById('screen').textContent = visitorData.screen;
+            
+            if (key === 'sahroni') {
+                document.getElementById('public').style.display = 'none';
+                document.getElementById('private').style.display = 'block';
+                
+                getIP().then(ip => {
+                    document.getElementById('ip').textContent = ip;
+                    
+                    // Add to log
+                    const log = document.getElementById('log');
+                    const entry = document.createElement('div');
+                    entry.textContent = `[${new Date().toLocaleTimeString()}] IP: ${ip} | Browser: ${visitorData.browser.substring(0, 50)}...`;
+                    log.appendChild(entry);
+                    
+                    // Try to get location
+                    if (ip !== 'IP detection failed' && ip !== 'Not found via WebRTC') {
+                        fetch(`https://ipapi.co/${ip}/json/`)
+                            .then(r => r.json())
+                            .then(loc => {
+                                if (loc.city) {
+                                    document.getElementById('location').textContent = 
+                                        `${loc.city}, ${loc.region}, ${loc.country_name}`;
+                                }
+                            })
+                            .catch(() => {
+                                document.getElementById('location').textContent = 'Location unavailable';
+                            });
+                    }
+                });
+            }
+        }
+
+        function saveData() {
+            const data = {
+                ip: document.getElementById('ip').textContent,
+                time: document.getElementById('time').textContent,
+                browser: document.getElementById('browser').textContent,
+                location: document.getElementById('location').textContent,
+                url: window.location.href
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'visitor-data-' + Date.now() + '.json';
+            a.click();
+        }
+
+        // Auto check on load
+        window.onload = checkAccess;
+    </script>
+</body>
+</html>
